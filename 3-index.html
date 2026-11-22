@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>نظام تكاليف المطعم</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--pri:#1f4e79;--pri2:#2e75b6;--ok:#2e7d32;--bad:#c62828;--line:#d9e1ec}
+*{box-sizing:border-box}body{margin:0;font-family:"Segoe UI",Tahoma,Arial,sans-serif;background:var(--bg);color:#1b2733;font-size:14px}
+header{background:var(--pri);color:#fff;padding:10px 16px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+header h1{font-size:18px;margin:0}
+.btn{background:var(--pri2);color:#fff;border:0;border-radius:6px;padding:7px 12px;cursor:pointer;font-size:13px}
+.btn.sec{background:#fff;color:var(--pri);border:1px solid var(--pri2)}.btn.red{background:var(--bad)}
+nav{display:flex;overflow-x:auto;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+nav button{border:0;background:none;padding:12px 16px;cursor:pointer;font-size:14px;white-space:nowrap;border-bottom:3px solid transparent;color:#455}
+nav button.on{border-color:var(--pri2);color:var(--pri);font-weight:700}
+main{padding:12px;max-width:1300px;margin:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px}
+.card{background:var(--card);border-radius:10px;padding:12px;border:1px solid var(--line)}
+.card b{display:block;font-size:20px;margin-top:4px;color:var(--pri)}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;align-items:center}
+.tools input[type=search]{padding:7px;border:1px solid var(--line);border-radius:6px;min-width:200px}
+.wrap{overflow:auto;max-height:68vh;background:#fff;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;min-width:700px}
+th{background:var(--pri);color:#fff;position:sticky;top:0;padding:8px;font-weight:600;text-align:center;z-index:2;font-size:13px}
+td{border-bottom:1px solid #eef2f7;padding:2px 3px}
+td input,td select{width:100%;min-width:70px;border:1px solid transparent;background:transparent;padding:5px;font:inherit;border-radius:4px}
+td input:focus,td select:focus{border-color:var(--pri2);background:#fff;outline:none}
+td.c{background:#f1f6fc;text-align:center;padding:5px 8px;white-space:nowrap}
+td.x{width:34px;text-align:center}
+.neg{color:var(--bad);font-weight:700}.pos{color:var(--ok)}
+tr.warn td.c.w{background:#fde8e8}
+.note{background:#fff8e1;border:1px solid #f0d98a;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:13px}
+tfoot td{background:#e8f0fa;font-weight:700;padding:6px 8px;position:sticky;bottom:0}
+.sub{color:#567;font-size:12px}
+
+/* print / PDF export */
+@media print{
+  header .hd-btns, nav, .tools, .x, #syncst, #loginOv{display:none !important}
+  body{background:#fff;font-size:11px}
+  main{padding:0;max-width:none}
+  .wrap{max-height:none;overflow:visible;border:0}
+  th{position:static;font-size:10px}
+  td,th{border:1px solid #999 !important}
+  td input,td select{border:0}
+  #phead{display:block !important}
+  .card b{font-size:14px}
+}
+#loginOv{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:50}
+#loginOv .box{background:#fff;border:1px solid var(--line);border-radius:12px;padding:24px;width:320px;max-width:92vw}
+#loginOv h2{margin:0 0 4px;color:var(--pri);font-size:18px}
+#loginOv input{width:100%;padding:9px;margin:6px 0;border:1px solid var(--line);border-radius:6px;font:inherit}
+#loginOv .err{color:var(--bad);font-size:13px;min-height:18px}
+#syncst{font-size:12px;color:#cfe3f5}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script></head><body>
+<header><h1>🍔 نظام التكاليف والمخزون</h1>
+<div class="hd-btns"><span id="syncst"></span>
+<button class="btn sec" onclick="printTab()">🖨 تصدير PDF</button>
+<button class="btn sec" onclick="exportJSON()">⬇ نسخة احتياطية</button>
+<button class="btn sec" onclick="document.getElementById('imp').click()">⬆ استرجاع نسخة</button>
+<button class="btn red" onclick="resetAll()">إعادة ضبط</button>
+<button class="btn sec" onclick="signOut()">🚪 خروج</button>
+<input type="file" id="imp" accept=".json" hidden onchange="importJSON(this)"></div></header>
+<div id="phead" style="display:none"><h2 id="ptitle"></h2><p id="pdate" class="sub"></p></div>
+<div id="loginOv" style="display:none"><div class="box">
+<h2>🍔 نظام التكاليف والمخزون</h2>
+<p class="sub">سجّل دخولك عشان توصل لبياناتك من أي جهاز</p>
+<input id="lemail" type="email" placeholder="اسم المستخدم (الإيميل)" autocomplete="username" dir="ltr">
+<input id="lpass" type="password" placeholder="كلمة السر" autocomplete="current-password" dir="ltr">
+<div class="err" id="lerr"></div>
+<button class="btn" style="width:100%" onclick="signIn()">دخول</button>
+</div></div>
+<nav id="nav"></nav><main id="main"></main>
+<script>
+// Calculation engine: mirrors the Excel formulas exactly.
+function K(s){return String(s==null?'':s).toLowerCase();} // Excel lookups are case-insensitive, NOT trimmed
+function N(x){x=parseFloat(x);return isNaN(x)?0:x;}
+function calc(S){
+  const inv=new Map();S.inventory.forEach(i=>{const k=K(i.name);if(!inv.has(k))inv.set(k,i);});
+  const menu=new Map();S.menu.forEach(m=>{const k=K(m.name);if(!menu.has(k))menu.set(k,m);});
+  // Sales rows: price = menu price, cost = menu cost * qty, profit = qty*price - cost
+  const sales=S.sales.map(r=>{
+    const m=r.product?menu.get(K(r.product)):null;
+    if(!m)return {price:null,cost:null,profit:null,ok:!r.product};
+    const q=N(r.qty);return {price:N(m.price),cost:N(m.cost)*q,profit:q*N(m.price)-N(m.cost)*q,ok:true};
+  });
+  const sold={};S.sales.forEach(r=>{if(r.product)sold[K(r.product)]=(sold[K(r.product)]||0)+N(r.qty);});
+  // Purchases: unit price blank -> avg price from inventory; total = qty*price
+  const purchases=S.purchases.map(r=>{
+    const it=r.item?inv.get(K(r.item)):null;
+    const price=(r.price===''||r.price==null)?(it?N(it.avg):0):N(r.price);
+    return {price,total:r.item?N(r.qty)*price:null,ok:!r.item||!!it};
+  });
+  const bought={};S.purchases.forEach(r=>{if(r.item)bought[K(r.item)]=(bought[K(r.item)]||0)+N(r.qty);});
+  // Recipe lines: cost = avg price (inventory) * qty ; unknown material -> 0
+  const recipe=S.recipe.map(r=>{const it=inv.get(K(r.material));return {unit:it?it.unit:'',cost:it?N(it.avg)*N(r.qty):0,ok:!!it};});
+  // Consumption of each material = sum(recipe qty * sold qty of that product)
+  const cons={};S.recipe.forEach(r=>{const q=sold[K(r.product)]||0;if(q)cons[K(r.material)]=(cons[K(r.material)]||0)+N(r.qty)*q;});
+  const inventory=S.inventory.map(i=>{
+    const k=K(i.name);const p=bought[k]||0,c=cons[k]||0,bal=N(i.open)+p-c;
+    return {purchased:p,consumed:c,balance:bal,value:bal*N(i.avg)};
+  });
+  // Recipe cost per product
+  const prodCost={};S.recipe.forEach((r,idx)=>{prodCost[K(r.product)]=(prodCost[K(r.product)]||0)+recipe[idx].cost;});
+  const menuOut=S.menu.map(m=>{const tax=N(m.tax);const margin=N(m.price)-N(m.cost)-(tax===0?0:tax);
+    return {margin,pct:N(m.cost)?margin/N(m.cost):null,recipeCost:prodCost[K(m.name)]};});
+  const avgMargin=menuOut.length?menuOut.reduce((a,b)=>a+b.margin,0)/menuOut.length:0;
+  const products=[...new Set(S.recipe.map(r=>r.product))].map(p=>{
+    const m=menu.get(K(p));const cost=prodCost[K(p)]||0;const price=m?N(m.price):0;
+    return {product:p,cost,price,profit:price-cost,inMenu:!!m};});
+  const tot={sales:0,cost:0,profit:0,purchases:0,invValue:0,qty:0};
+  sales.forEach((r,i)=>{if(r.price!=null){tot.sales+=N(S.sales[i].qty)*r.price;tot.cost+=r.cost;tot.profit+=r.profit;tot.qty+=N(S.sales[i].qty);}});
+  purchases.forEach(r=>{if(r.total!=null)tot.purchases+=r.total;});
+  inventory.forEach(r=>tot.invValue+=r.value);
+  return {sales,purchases,recipe,inventory,menu:menuOut,avgMargin,products,tot};
+}
+
+const SEED={"inventory": [{"code": "", "name": "لحم بريسكت", "cat": "", "unit": "كيلو", "open": 100.0, "avg": 51.497}, {"code": "", "name": "صدور دجاج", "cat": "", "unit": "كيلو", "open": 500.0, "avg": 24.916666666666668}, {"code": "", "name": "لية", "cat": "", "unit": "كيلو", "open": 0, "avg": 30.015}, {"code": "", "name": "مايونيز", "cat": "", "unit": "كيلو", "open": 0, "avg": 20.76865671641791}, {"code": "", "name": "باربيكيو", "cat": "", "unit": "كيلو", "open": 18.0, "avg": 25.875}, {"code": "", "name": "كاتشب ", "cat": "", "unit": "كيلو", "open": 0, "avg": 14.895238095238096}, {"code": "", "name": "سويت شيلي", "cat": "", "unit": "كيلو", "open": 0, "avg": 15.74404761904762}, {"code": "", "name": "خيار مخلل مفروم حلو", "cat": "", "unit": "كيلو", "open": 36.0, "avg": 13.855421686746988}, {"code": "", "name": "مكعب مرقه دجاج", "cat": "", "unit": "عدد", "open": 0, "avg": 0}, {"code": "", "name": "خيار مخلل شرائح حلو", "cat": "", "unit": "كيلو", "open": 40.0, "avg": 21.961805555555554}, {"code": "", "name": "فلفل هالبينو", "cat": "", "unit": "كيلو", "open": 0, "avg": 20.444444444444446}, {"code": "", "name": "حليب المراعي", "cat": "", "unit": "لتر", "open": 0, "avg": 4.753333333333333}, {"code": "", "name": "سيراتشا امريكي ", "cat": "", "unit": "لتر", "open": 0, "avg": 48.07884615384615}, {"code": "", "name": "سيراتشا تاباسكو", "cat": "", "unit": "كيلو", "open": 28.0, "avg": 64.50320512820512}, {"code": "", "name": "عسل اسود", "cat": "", "unit": "كيلو", "open": 0, "avg": 19.32638888888889}, {"code": "", "name": "عصير اناناس المراعي", "cat": "", "unit": "كيلو", "open": 0, "avg": 16.9625}, {"code": "", "name": "شيرة البانكيك", "cat": "", "unit": "كيلو", "open": 6.0, "avg": 17.499999999999996}, {"code": "", "name": "كريمه البلساميك", "cat": "", "unit": "كيلو", "open": 0, "avg": 69.21296296296296}, {"code": "", "name": "جبنه شيدر قوالب بريزيدون", "cat": "", "unit": "كيلو", "open": 0, "avg": 44.41555555555555}, {"code": "", "name": "جبنه شرائح فرسانا", "cat": "", "unit": "كيلو", "open": 0, "avg": 25.773678414096917}, {"code": "", "name": "اناناس شرائح", "cat": "", "unit": "كيلو", "open": 0, "avg": 13.033333333333335}, {"code": "", "name": "خل الأرز", "cat": "", "unit": "لتر", "open": 0, "avg": 16.42857142857143}, {"code": "", "name": "ورشيستر صوص", "cat": "", "unit": "كيلو", "open": 0, "avg": 43.71345029239767}, {"code": "", "name": "صلصله فلفل حلو", "cat": "", "unit": "لتر", "open": 22.0, "avg": 0}, {"code": "", "name": "فلفل اسود", "cat": "", "unit": "كيلو", "open": 1.0, "avg": 66.60416666666666}, {"code": "", "name": "فلفل ابيض", "cat": "", "unit": "كيلو", "open": 1.0, "avg": 70.67708333333333}, {"code": "", "name": "ماجي بودر", "cat": "", "unit": "كيلو", "open": 1.0, "avg": 46.851851851851855}, {"code": "", "name": "ناجتس", "cat": "", "unit": "كيلو", "open": 0, "avg": 60.375}, {"code": "", "name": "توابل المشويات", "cat": "", "unit": "كيلو", "open": 4.0, "avg": 25.875}, {"code": "", "name": "ثوم بودر", "cat": "", "unit": "كيلو", "open": 0, "avg": 102.06249999999999}, {"code": "", "name": "بصل بودر", "cat": "", "unit": "كيلو", "open": 0, "avg": 77.30555555555556}, {"code": "", "name": "بابريكا فلفل حار", "cat": "", "unit": "كيلو", "open": 14.0, "avg": 70.83333333333333}, {"code": "", "name": "ملح ساسا", "cat": "", "unit": "كيلو", "open": 2.0, "avg": 3.4819444444444443}, {"code": "", "name": "بطاطس الجوف", "cat": "", "unit": "كيلو", "open": 300.0, "avg": 6.79995}, {"code": "", "name": "جوزة الطيب", "cat": "", "unit": "كيلو", "open": 0, "avg": 180.09}, {"code": "", "name": "نكهه جبنه", "cat": "", "unit": "كيلو", "open": 0, "avg": 80.03999999999999}, {"code": "", "name": "زيت تنك", "cat": "", "unit": "كيلو", "open": 0, "avg": 6.460294117647059}, {"code": "", "name": "جزر", "cat": "", "unit": "كيلو", "open": 0, "avg": 5.0024999999999995}, {"code": "", "name": "دقيق كويتي", "cat": "", "unit": "كيلو", "open": 0, "avg": 2.5}, {"code": "", "name": "زيت شمس", "cat": "", "unit": "كيلو", "open": 0, "avg": 8.922413793103448}, {"code": "", "name": "بصل", "cat": "", "unit": "كيلو", "open": 0, "avg": 10.120000000000001}, {"code": "", "name": "خبز 70 جرام", "cat": "", "unit": "عدد", "open": 288.0, "avg": 1.85}, {"code": "", "name": "خل ابيض", "cat": "", "unit": "كيلو", "open": 0, "avg": 3.4046052631579}, {"code": "", "name": "زيت الوليمه", "cat": "", "unit": "لتر", "open": 0, "avg": 8.94}, {"code": "", "name": "بهارات سبعه", "cat": "", "unit": "كيلو", "open": 7.0, "avg": 23.0}, {"code": "", "name": "بهارات بطاطس ", "cat": "", "unit": "كيلو", "open": 0, "avg": 60.25}, {"code": "", "name": "كيس برجر ", "cat": "", "unit": "عدد", "open": 0, "avg": 0.075}, {"code": "", "name": "علبة وجبة أطفال", "cat": "", "unit": "عدد", "open": 0, "avg": 0.092}, {"code": "", "name": "علبه بطاطس", "cat": "", "unit": "عدد", "open": 0, "avg": 0.045}, {"code": "", "name": "علبة برجر", "cat": "", "unit": "عدد", "open": 0, "avg": 0.085}, {"code": "", "name": "علبة ناجيت", "cat": "", "unit": "عدد", "open": 2500.0, "avg": 0.046}, {"code": "", "name": "علب كرسبي فرايز", "cat": "", "unit": "عدد", "open": 75.0, "avg": 0.450225}, {"code": "", "name": "سوكر اسناد", "cat": "", "unit": "كيلو", "open": 10.0, "avg": 0}, {"code": "", "name": "بهارات حراقه اسناد", "cat": "", "unit": "كيلو", "open": 16.0, "avg": 0}, {"code": "", "name": "بقسماط", "cat": "", "unit": "كيلو", "open": 0, "avg": 5.654166666666666}, {"code": "", "name": "عصير ربيع", "cat": "", "unit": "عدد", "open": 0, "avg": 1.65}, {"code": "", "name": "شوك", "cat": "", "unit": "عدد", "open": 0, "avg": 0.03}, {"code": "", "name": "علب صوص", "cat": "", "unit": "عدد", "open": 0, "avg": 0.05}, {"code": "", "name": "كاتشب ظرف", "cat": "", "unit": "عدد", "open": 0, "avg": 0.06}, {"code": "", "name": "زبده", "cat": "", "unit": "كيلو", "open": 0, "avg": 80.04}, {"code": "", "name": "خردل", "cat": "", "unit": "كيلو", "open": 14.0, "avg": 13.2}, {"code": "", "name": "شطه العقرب ", "cat": "", "unit": "كيلو", "open": 5.0, "avg": 240.0}, {"code": "", "name": "ورق زبده", "cat": "", "unit": "عدد", "open": 0, "avg": 0.12}, {"code": "", "name": "لون غذائي", "cat": "", "unit": "كيلو", "open": 0, "avg": 98.0}, {"code": "", "name": "خبز كيدز ميل", "cat": "", "unit": "عدد", "open": 0, "avg": 1.25}, {"code": "", "name": "خبز 60 جرام", "cat": "", "unit": "عدد", "open": 750.0, "avg": 1.75}, {"code": "", "name": "كانز", "cat": "", "unit": "عدد", "open": 1650.0, "avg": 1.75}, {"code": "", "name": "خبز كريمي بيف", "cat": "", "unit": "عدد", "open": 275.0, "avg": 0}, {"code": "", "name": "علبة كريمي بيف", "cat": "", "unit": "عدد", "open": 0, "avg": 1.4}, {"code": "", "name": "خس", "cat": "", "unit": "كيلو", "open": 0, "avg": 3.8}, {"code": "", "name": "مايه", "cat": "", "unit": "عدد", "open": 170.0, "avg": 0}, {"code": "", "name": "صلصه شواء", "cat": "", "unit": "كيلو", "open": 7.0, "avg": 0}, {"code": "", "name": "معجون فلافل", "cat": "", "unit": "كيلو", "open": 34.0, "avg": 0}], "recipe": [{"product": "Smash Beef", "material": "خبز 60 جرام", "qty": 1.0}, {"product": "Smash Beef", "material": "لحم بريسكت", "qty": 0.1}, {"product": "Smash Beef", "material": "لية", "qty": 0.018}, {"product": "Smash Beef", "material": "جبنه شرائح فرسانا", "qty": 0.03}, {"product": "Smash Beef", "material": "جبنه شيدر قوالب بريزيدون", "qty": 0.00409}, {"product": "Smash Beef", "material": "جبنه شرائح فرسانا", "qty": 0.00515}, {"product": "Smash Beef", "material": "حليب المراعي", "qty": 0.0106}, {"product": "Smash Beef", "material": "نكهه جبنه", "qty": 6e-05}, {"product": "Smash Beef", "material": "ماجي بودر", "qty": 7e-05}, {"product": "Smash Beef", "material": "ملح ساسا", "qty": 3e-05}, {"product": "Smash Beef", "material": "مايونيز", "qty": 0.01707}, {"product": "Smash Beef", "material": "كاتشب فريشلي", "qty": 0.01024}, {"product": "Smash Beef", "material": "خيار مخلل مفروم حلو", "qty": 0.00171}, {"product": "Smash Beef", "material": "عصير اناناس المراعي", "qty": 0.00085}, {"product": "Smash Beef", "material": "ثوم بودر", "qty": 6e-05}, {"product": "Smash Beef", "material": "بصل بودر", "qty": 8e-05}, {"product": "Smash Beef", "material": "خيار مخلل شرائح حلو", "qty": 0.015}, {"product": "Smash Beef", "material": "ورق زبده", "qty": 1.0}, {"product": "Smash Beef", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "Smash Beef", "material": "علبة برجر", "qty": 1.0}, {"product": "Smash Beef", "material": "خس", "qty": 0.03}, {"product": "Smash Beef", "material": "علب صوص", "qty": 1.0}, {"product": "Smash Beef", "material": "كيس برجر ", "qty": 1.0}, {"product": "Clasic Beef", "material": "خبز 60 جرام", "qty": 1.0}, {"product": "Clasic Beef", "material": "ملح ساسا", "qty": 0.0002}, {"product": "Clasic Beef", "material": "فلفل اسود", "qty": 0.0002}, {"product": "Clasic Beef", "material": "فلفل ابيض", "qty": 0.0002}, {"product": "Clasic Beef", "material": "خس", "qty": 0.03}, {"product": "Clasic Beef", "material": "علب صوص", "qty": 1.0}, {"product": "Clasic Beef", "material": "جوزة الطيب", "qty": 0.0001}, {"product": "Clasic Beef", "material": "باربيكيو", "qty": 0.001}, {"product": "Clasic Beef", "material": "توابل المشويات", "qty": 0.0015}, {"product": "Clasic Beef", "material": "بهارات سبعه", "qty": 0.001}, {"product": "Clasic Beef", "material": "لية", "qty": 0.02}, {"product": "Clasic Beef", "material": "لحم بريسكت", "qty": 0.08}, {"product": "Clasic Beef", "material": "جبنه شرائح فرسانا", "qty": 0.015}, {"product": "Clasic Beef", "material": "علبة برجر", "qty": 1.0}, {"product": "Clasic Beef", "material": "كيس برجر ", "qty": 1.0}, {"product": "Clasic Beef", "material": "خيار مخلل شرائح حلو", "qty": 0.015}, {"product": "Clasic Beef", "material": "جبنه شيدر قوالب بريزيدون", "qty": 0.005}, {"product": "Clasic Beef", "material": "جبنه شرائح فرسانا", "qty": 0.0065}, {"product": "Clasic Beef", "material": "حليب المراعي", "qty": 0.013}, {"product": "Clasic Beef", "material": "نكهه جبنه", "qty": 1e-05}, {"product": "Clasic Beef", "material": "ماجي بودر", "qty": 0.00012}, {"product": "Clasic Beef", "material": "ملح ساسا", "qty": 5e-05}, {"product": "Clasic Beef", "material": "مايونيز", "qty": 0.01138}, {"product": "Clasic Beef", "material": "كاتشب فريشلي", "qty": 0.00683}, {"product": "Clasic Beef", "material": "خيار مخلل مفروم حلو", "qty": 0.00114}, {"product": "Clasic Beef", "material": "عصير اناناس المراعي", "qty": 0.00057}, {"product": "Clasic Beef", "material": "ثوم بودر", "qty": 4e-05}, {"product": "Clasic Beef", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "Clasic Beef", "material": "ورق زبده", "qty": 1.0}, {"product": "Clasic Beef", "material": "بصل بودر", "qty": 5e-05}, {"product": "Crunchy Crust", "material": "خبز 60 جرام", "qty": 1.0}, {"product": "Crunchy Crust", "material": "خس", "qty": 0.03}, {"product": "Crunchy Crust", "material": "صدور دجاج", "qty": 0.1}, {"product": "Crunchy Crust", "material": "خس", "qty": 0.03}, {"product": "Crunchy Crust", "material": "جبنه شيدر قوالب بريزيدون", "qty": 0.00613}, {"product": "Crunchy Crust", "material": "جبنه شرائح فرسانا", "qty": 0.00772}, {"product": "Crunchy Crust", "material": "حليب المراعي", "qty": 0.0159}, {"product": "Crunchy Crust", "material": "نكهه جبنه", "qty": 9e-05}, {"product": "Crunchy Crust", "material": "علب صوص", "qty": 1.0}, {"product": "Crunchy Crust", "material": "ماجي بودر", "qty": 0.00011}, {"product": "Crunchy Crust", "material": "ملح ساسا", "qty": 5e-05}, {"product": "Crunchy Crust", "material": "مايونيز", "qty": 0.01707}, {"product": "Crunchy Crust", "material": "كاتشب فريشلي", "qty": 0.01024}, {"product": "Crunchy Crust", "material": "خيار مخلل مفروم حلو", "qty": 0.00171}, {"product": "Crunchy Crust", "material": "عصير اناناس المراعي", "qty": 0.00085}, {"product": "Crunchy Crust", "material": "ثوم بودر", "qty": 6e-05}, {"product": "Crunchy Crust", "material": "بصل بودر", "qty": 8e-05}, {"product": "Crunchy Crust", "material": "كرنب", "qty": 0.03636}, {"product": "Crunchy Crust", "material": "جزر", "qty": 0.00182}, {"product": "Crunchy Crust", "material": "مايونيز", "qty": 0.00727}, {"product": "Crunchy Crust", "material": "خيار مخلل شرائح حلو", "qty": 0.015}, {"product": "Crunchy Crust", "material": "ورق زبده", "qty": 1.0}, {"product": "Crunchy Crust", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "Crunchy Crust", "material": "علبة برجر", "qty": 1.0}, {"product": "Crunchy Crust", "material": "كيس برجر ", "qty": 1.0}, {"product": "Kids Mall", "material": "صدور دجاج", "qty": 0.09}, {"product": "Kids Mall", "material": "توابل المشويات", "qty": 0.015}, {"product": "Kids Mall", "material": "خلطه تغطية كيدز ميل", "qty": 0.012}, {"product": "Kids Mall", "material": "علبه بطاطس", "qty": 1.0}, {"product": "Kids Mall", "material": "علبة وجبة أطفال", "qty": 1.0}, {"product": "Kids Mall", "material": "بطاطس الجوف", "qty": 0.125}, {"product": "Kids Mall", "material": "خبز كيدز ميل", "qty": 1.0}, {"product": "Kids Mall", "material": "ورق زبده", "qty": 1.0}, {"product": "Kids Mall", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "Kids Mall", "material": "عصير ربيع", "qty": 1.0}, {"product": "Crispy Frize", "material": "بطاطس الجوف", "qty": 0.35}, {"product": "Crispy Frize", "material": "مايونيز", "qty": 0.03982}, {"product": "Crispy Frize", "material": "كاتشب فريشلي", "qty": 0.02389}, {"product": "Crispy Frize", "material": "خيار مخلل مفروم حلو", "qty": 0.00398}, {"product": "Crispy Frize", "material": "عصير اناناس المراعي", "qty": 0.00199}, {"product": "Crispy Frize", "material": "ثوم بودر", "qty": 0.00014}, {"product": "Crispy Frize", "material": "بصل بودر", "qty": 0.00018}, {"product": "Crispy Frize", "material": "جبنه شيدر قوالب بريزيدون", "qty": 0.02044}, {"product": "Crispy Frize", "material": "جبنه شرائح فرسانا", "qty": 0.02574}, {"product": "Crispy Frize", "material": "حليب المراعي", "qty": 0.053}, {"product": "Crispy Frize", "material": "نكهه جبنه", "qty": 0.0003}, {"product": "Crispy Frize", "material": "ماجي بودر", "qty": 0.00036}, {"product": "Crispy Frize", "material": "ملح ساسا", "qty": 0.00015}, {"product": "Crispy Frize", "material": "عسل اسود", "qty": 0.01011}, {"product": "Crispy Frize", "material": "باربيكيو", "qty": 0.01685}, {"product": "Crispy Frize", "material": "فلفل اسود", "qty": 0.00034}, {"product": "Crispy Frize", "material": "كريمه البلساميك", "qty": 0.00101}, {"product": "Crispy Frize", "material": "بابريكا فلفل حار", "qty": 0.00084}, {"product": "Crispy Frize", "material": "ورشيستر صوص", "qty": 0.00084}, {"product": "Crispy Frize", "material": "صدور دجاج", "qty": 0.1}, {"product": "Crispy Frize", "material": "كيس برجر ", "qty": 1.0}, {"product": "Crispy Frize", "material": "علب كرسبي فرايز", "qty": 1.0}, {"product": "frize", "material": "بطاطس الجوف", "qty": 0.165}, {"product": "frize", "material": "بهارات بطاطس ", "qty": 0.02}, {"product": "frize", "material": "علبه بطاطس", "qty": 1.0}, {"product": "Nuggit", "material": "ناجتس", "qty": 0.046}, {"product": "Nuggit", "material": "ورق زبده", "qty": 1.0}, {"product": "Nuggit", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "Nuggit", "material": "علبه بطاطس", "qty": 1.0}, {"product": "Nuggit", "material": "علبة ناجيت", "qty": 1.0}, {"product": "Nuggit", "material": "بطاطس الجوف", "qty": 0.35}, {"product": "Nuggit", "material": "عصير ربيع", "qty": 1.0}, {"product": "Chili Crust", "material": "خبز 60 جرام", "qty": 1.0}, {"product": "Chili Crust", "material": "خس", "qty": 0.03}, {"product": "Chili Crust", "material": "صدور دجاج", "qty": 0.1}, {"product": "Chili Crust", "material": "سيراتشا تاباسكو", "qty": 0.01083}, {"product": "Chili Crust", "material": "سيراتشا امريكي ", "qty": 0.01083}, {"product": "Chili Crust", "material": "سكر", "qty": 0.00208}, {"product": "Chili Crust", "material": "زبده", "qty": 0.00417}, {"product": "Chili Crust", "material": "شطه العقرب ", "qty": 0.00208}, {"product": "Chili Crust", "material": "كرنب", "qty": 0.02424}, {"product": "Chili Crust", "material": "جزر", "qty": 0.00121}, {"product": "Chili Crust", "material": "كيس برجر ", "qty": 0.0097}, {"product": "Chili Crust", "material": "ورق زبده", "qty": 1.0}, {"product": "Chili Crust", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "Chili Crust", "material": "علبة برجر", "qty": 1.0}, {"product": "Chili Crust", "material": "مايونيز", "qty": 0.00485}, {"product": "ميبل صوص", "material": "سيراتشا تاباسكو", "qty": 0.0072}, {"product": "ميبل صوص", "material": "علب صوص", "qty": 1.0}, {"product": "ميبل صوص", "material": "سيراتشا امريكي ", "qty": 0.0072}, {"product": "ميبل صوص", "material": "سكر", "qty": 0.0013}, {"product": "ميبل صوص", "material": "زبده", "qty": 0.0027}, {"product": "ميبل صوص", "material": "شطه العقرب ", "qty": 0.0013}, {"product": "كولسلو سالاد", "material": "كرنب", "qty": 0.184}, {"product": "كولسلو سالاد", "material": "جزر", "qty": 0.000625}, {"product": "كولسلو سالاد", "material": "علب صوص", "qty": 1.0}, {"product": "كولسلو سالاد", "material": "مايونيز", "qty": 0.00243}, {"product": "كولسلو دريسينج", "material": "مايونيز", "qty": 0.01}, {"product": "كولسلو دريسينج", "material": "خل ابيض", "qty": 0.0018}, {"product": "كولسلو دريسينج", "material": "زيت شمس", "qty": 0.0021}, {"product": "كولسلو دريسينج", "material": "علب صوص", "qty": 1.0}, {"product": "كولسلو دريسينج", "material": "سكر", "qty": 0.0053}, {"product": "الف جزيرة", "material": "مايونيز", "qty": 0.0114}, {"product": "الف جزيرة", "material": "كاتشب فريشلي", "qty": 0.0068}, {"product": "الف جزيرة", "material": "خيار مخلل مفروم حلو", "qty": 0.0011}, {"product": "الف جزيرة", "material": "ثوم بودر", "qty": 4e-05}, {"product": "الف جزيرة", "material": "علب صوص", "qty": 1.0}, {"product": "الف جزيرة", "material": "بصل بودر", "qty": 6e-05}, {"product": "شيدر صوص ", "material": "جبنه شيدر قوالب بريزيدون", "qty": 0.00409}, {"product": "شيدر صوص ", "material": "جبنه شرائح فرسانا", "qty": 0.0051}, {"product": "شيدر صوص ", "material": "حليب المراعي", "qty": 0.0106}, {"product": "شيدر صوص ", "material": "نكهه جبنه", "qty": 1e-05}, {"product": "شيدر صوص ", "material": "علب صوص", "qty": 1.0}, {"product": "شيدر صوص ", "material": "ماجي بودر", "qty": 1e-06}, {"product": "شيدر صوص ", "material": "ملح ساسا", "qty": 0.01}, {"product": "تايجر صوص", "material": "عسل اسود", "qty": 0.0067}, {"product": "تايجر صوص", "material": "باربيكيو", "qty": 0.0113}, {"product": "تايجر صوص", "material": "علب صوص", "qty": 1.0}, {"product": "تايجر صوص", "material": "فلفل اسود", "qty": 3e-05}, {"product": "تايجر صوص", "material": "كريمه البلساميك", "qty": 9e-05}, {"product": "تايجر صوص", "material": "بابريكا فلفل حار", "qty": 7e-05}, {"product": "تايجر صوص", "material": "ورشيستر صوص", "qty": 7e-05}, {"product": "كانز", "material": "كانز", "qty": 1.0}, {"product": "مايه", "material": "مايه", "qty": 1.0}, {"product": "ربيع عصير", "material": "عصير ربيع", "qty": 1.0}, {"product": "double beef", "material": "خبز 70 جرام", "qty": 1.0}, {"product": "double beef", "material": "خس", "qty": 0.03}, {"product": "double beef", "material": "لحم بريسكت", "qty": 0.2}, {"product": "double beef", "material": "جبنه شرائح فرسانا", "qty": 0.015}, {"product": "double beef", "material": "بصل", "qty": 0.02}, {"product": "double beef", "material": "جبنه شيدر قوالب بريزيدون", "qty": 0.00511}, {"product": "double beef", "material": "جبنه شرائح فرسانا", "qty": 0.00643}, {"product": "double beef", "material": "حليب المراعي", "qty": 0.01325}, {"product": "double beef", "material": "نكهه جبنه", "qty": 8e-05}, {"product": "double beef", "material": "ماجي بودر", "qty": 9e-05}, {"product": "double beef", "material": "ملح ساسا", "qty": 4e-05}, {"product": "double beef", "material": "مايونيز", "qty": 0.01138}, {"product": "double beef", "material": "كاتشب فريشلي", "qty": 0.00683}, {"product": "double beef", "material": "خيار مخلل مفروم حلو", "qty": 0.00114}, {"product": "double beef", "material": "عصير اناناس المراعي", "qty": 0.00057}, {"product": "double beef", "material": "ثوم بودر", "qty": 4e-05}, {"product": "double beef", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "double beef", "material": "ورق زبده", "qty": 1.0}, {"product": "double beef", "material": "علبة برجر", "qty": 1.0}, {"product": "double beef", "material": "كيس برجر ", "qty": 1.0}, {"product": "double beef", "material": "بصل بودر", "qty": 5e-05}, {"product": "وجبه سماش", "material": "خبز 70 جرام", "qty": 1.0}, {"product": "وجبه سماش", "material": "خس", "qty": 0.03}, {"product": "وجبه سماش", "material": "لحم بريسكت", "qty": 0.106}, {"product": "وجبه سماش", "material": "لية", "qty": 0.02}, {"product": "وجبه سماش", "material": "جبنه شرائح فرسانا", "qty": 0.03}, {"product": "وجبه سماش", "material": "بصل", "qty": 0.02}, {"product": "وجبه سماش", "material": "جبنه شيدر قوالب بريزيدون", "qty": 0.00409}, {"product": "وجبه سماش", "material": "جبنه شرائح فرسانا", "qty": 0.00515}, {"product": "وجبه سماش", "material": "حليب المراعي", "qty": 0.0106}, {"product": "وجبه سماش", "material": "نكهه جبنه", "qty": 6e-05}, {"product": "وجبه سماش", "material": "ماجي بودر", "qty": 7e-05}, {"product": "وجبه سماش", "material": "ملح ساسا", "qty": 3e-05}, {"product": "وجبه سماش", "material": "مايونيز", "qty": 0.01707}, {"product": "وجبه سماش", "material": "كاتشب فريشلي", "qty": 0.01024}, {"product": "وجبه سماش", "material": "خيار مخلل مفروم حلو", "qty": 0.00171}, {"product": "وجبه سماش", "material": "عصير اناناس المراعي", "qty": 0.00085}, {"product": "وجبه سماش", "material": "علبة برجر", "qty": 1.0}, {"product": "وجبه سماش", "material": "ثوم بودر", "qty": 6e-05}, {"product": "وجبه سماش", "material": "ورق زبده", "qty": 1.0}, {"product": "وجبه سماش", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "وجبه سماش", "material": "بصل بودر", "qty": 8e-05}, {"product": "وجبه سماش", "material": "خيار مخلل شرائح حلو", "qty": 0.015}, {"product": "وجبه سماش", "material": "كيس برجر ", "qty": 1.0}, {"product": "وجبه سماش", "material": "بطاطس الجوف", "qty": 0.165}, {"product": "وجبه سماش", "material": "بهارات بطاطس ", "qty": 0.02}, {"product": "وجبه سماش", "material": "علبه بطاطس", "qty": 1.0}, {"product": "وجبه سماش", "material": "عصير ربيع", "qty": 1.0}, {"product": "وجبه ميبل", "material": "خبز 60 جرام", "qty": 1.0}, {"product": "وجبه ميبل", "material": "خس", "qty": 0.03}, {"product": "وجبه ميبل", "material": "صدور دجاج", "qty": 0.1}, {"product": "وجبه ميبل", "material": "سيراتشا تاباسكو", "qty": 0.01083}, {"product": "وجبه ميبل", "material": "سيراتشا امريكي ", "qty": 0.01083}, {"product": "وجبه ميبل", "material": "سكر", "qty": 0.00208}, {"product": "وجبه ميبل", "material": "زبده", "qty": 0.00417}, {"product": "وجبه ميبل", "material": "شطه العقرب ", "qty": 0.00208}, {"product": "وجبه ميبل", "material": "كرنب", "qty": 0.02424}, {"product": "وجبه ميبل", "material": "جزر", "qty": 0.00121}, {"product": "وجبه ميبل", "material": "كيس برجر ", "qty": 0.0097}, {"product": "وجبه ميبل", "material": "مايونيز", "qty": 0.00485}, {"product": "وجبه ميبل", "material": "بطاطس الجوف", "qty": 0.165}, {"product": "وجبه ميبل", "material": "بهارات بطاطس ", "qty": 0.02}, {"product": "وجبه ميبل", "material": "علبة برجر", "qty": 1.0}, {"product": "وجبه ميبل", "material": "ورق زبده", "qty": 1.0}, {"product": "وجبه ميبل", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "وجبه ميبل", "material": "علبه بطاطس", "qty": 1.0}, {"product": "وجبه ميبل", "material": "عصير ربيع", "qty": 1.0}, {"product": "وجبه كلاسيك", "material": "خبز 60 جرام", "qty": 1.0}, {"product": "وجبه كلاسيك", "material": "خس", "qty": 0.03}, {"product": "وجبه كلاسيك", "material": "لحم بريسكت", "qty": 0.1}, {"product": "وجبه كلاسيك", "material": "جبنه شرائح فرسانا", "qty": 0.015}, {"product": "وجبه كلاسيك", "material": "بصل", "qty": 0.02}, {"product": "وجبه كلاسيك", "material": "علبة برجر", "qty": 1.0}, {"product": "وجبه كلاسيك", "material": "كيس برجر ", "qty": 1.0}, {"product": "وجبه كلاسيك", "material": "خيار مخلل شرائح حلو", "qty": 0.015}, {"product": "وجبه كلاسيك", "material": "جبنه شيدر قوالب بريزيدون", "qty": 0.005}, {"product": "وجبه كلاسيك", "material": "جبنه شرائح فرسانا", "qty": 0.0065}, {"product": "وجبه كلاسيك", "material": "حليب المراعي", "qty": 0.013}, {"product": "وجبه كلاسيك", "material": "نكهه جبنه", "qty": 1e-05}, {"product": "وجبه كلاسيك", "material": "ماجي بودر", "qty": 0.00012}, {"product": "وجبه كلاسيك", "material": "ملح ساسا", "qty": 5e-05}, {"product": "وجبه كلاسيك", "material": "مايونيز", "qty": 0.01138}, {"product": "وجبه كلاسيك", "material": "كاتشب فريشلي", "qty": 0.00683}, {"product": "وجبه كلاسيك", "material": "خيار مخلل مفروم حلو", "qty": 0.00114}, {"product": "وجبه كلاسيك", "material": "عصير اناناس المراعي", "qty": 0.00057}, {"product": "وجبه كلاسيك", "material": "ثوم بودر", "qty": 4e-05}, {"product": "وجبه كلاسيك", "material": "بصل بودر", "qty": 5e-05}, {"product": "وجبه كلاسيك", "material": "بطاطس الجوف", "qty": 0.165}, {"product": "وجبه كلاسيك", "material": "بهارات بطاطس ", "qty": 0.02}, {"product": "وجبه كلاسيك", "material": "علبه بطاطس", "qty": 1.0}, {"product": "وجبه كلاسيك", "material": "ورق زبده", "qty": 1.0}, {"product": "وجبه كلاسيك", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "وجبه كلاسيك", "material": "عصير ربيع", "qty": 1.0}, {"product": "وجبه كرانشي", "material": "خبز 60 جرام", "qty": 1.0}, {"product": "وجبه كرانشي", "material": "خس", "qty": 0.03}, {"product": "وجبه كرانشي", "material": "صدور دجاج", "qty": 0.1}, {"product": "وجبه كرانشي", "material": "جبنه شيدر قوالب بريزيدون", "qty": 0.00613}, {"product": "وجبه كرانشي", "material": "جبنه شرائح فرسانا", "qty": 0.00772}, {"product": "وجبه كرانشي", "material": "حليب المراعي", "qty": 0.0159}, {"product": "وجبه كرانشي", "material": "نكهه جبنه", "qty": 9e-05}, {"product": "وجبه كرانشي", "material": "ماجي بودر", "qty": 0.00011}, {"product": "وجبه كرانشي", "material": "ملح ساسا", "qty": 5e-05}, {"product": "وجبه كرانشي", "material": "مايونيز", "qty": 0.01707}, {"product": "وجبه كرانشي", "material": "كاتشب فريشلي", "qty": 0.01024}, {"product": "وجبه كرانشي", "material": "خيار مخلل مفروم حلو", "qty": 0.00171}, {"product": "وجبه كرانشي", "material": "عصير اناناس المراعي", "qty": 0.00085}, {"product": "وجبه كرانشي", "material": "ثوم بودر", "qty": 6e-05}, {"product": "وجبه كرانشي", "material": "بصل بودر", "qty": 8e-05}, {"product": "وجبه كرانشي", "material": "كرنب", "qty": 0.03636}, {"product": "وجبه كرانشي", "material": "جزر", "qty": 0.00182}, {"product": "وجبه كرانشي", "material": "مايونيز", "qty": 0.00727}, {"product": "وجبه كرانشي", "material": "خيار مخلل شرائح حلو", "qty": 0.015}, {"product": "وجبه كرانشي", "material": "كيس برجر ", "qty": 1.0}, {"product": "وجبه كرانشي", "material": "بطاطس الجوف", "qty": 0.165}, {"product": "وجبه كرانشي", "material": "بهارات بطاطس ", "qty": 0.02}, {"product": "وجبه كرانشي", "material": "علبه بطاطس", "qty": 1.0}, {"product": "وجبه كرانشي", "material": "ورق زبده", "qty": 1.0}, {"product": "وجبه كرانشي", "material": "كاتشب ظرف", "qty": 1.0}, {"product": "وجبه كرانشي", "material": "علبة برجر", "qty": 1.0}, {"product": "وجبه كرانشي", "material": "عصير ربيع", "qty": 1.0}], "menu": [{"code": "", "name": "Clasic Beef", "cat": "", "cost": 8.585849347403045, "price": 21.0, "tax": 0}, {"code": "", "name": "Smash Beef", "cat": "", "cost": 9.499447505563646, "price": 22.0, "tax": 0}, {"code": "", "name": "Crunchy Crust", "cat": "", "cost": 6.5506110301287634, "price": 19.0, "tax": 0}, {"code": "", "name": "Chili Crust", "cat": "", "cost": 6.661937246290983, "price": 21.0, "tax": 0}, {"code": "", "name": "Kids Mall", "cat": "", "cost": 5.1537048611111125, "price": 15.0, "tax": 0}, {"code": "", "name": "Nuggit", "cat": "", "cost": 4.76510486111111, "price": 15.0, "tax": 0}, {"code": "", "name": "frize", "cat": "", "cost": 2.1024403096707824, "price": 7.0, "tax": 0}, {"code": "", "name": "Crispy Frize", "cat": "", "cost": 8.309171777963625, "price": 18.0, "tax": 0}, {"code": "", "name": "double beef", "cat": "", "cost": 11.971462621580724, "price": 28.0, "tax": 0}, {"code": "", "name": "ميبل صوص", "cat": "", "cost": 1.0, "price": 3.0, "tax": 0}, {"code": "", "name": "كولسلو سالاد", "cat": "", "cost": 1.0, "price": 3.0, "tax": 0}, {"code": "", "name": "كولسلو دريسينج", "cat": "", "cost": 1.0, "price": 3.0, "tax": 0}, {"code": "", "name": "الف جزيرة", "cat": "", "cost": 1.0, "price": 3.0, "tax": 0}, {"code": "", "name": "شيدر صوص ", "cat": "", "cost": 1.0, "price": 3.0, "tax": 0}, {"code": "", "name": "تايجر صوص", "cat": "", "cost": 1.0, "price": 3.0, "tax": 0}, {"code": "", "name": "كانز", "cat": "", "cost": 1.75, "price": 2.0, "tax": 0}, {"code": "", "name": "ربيع عصير", "cat": "", "cost": 1.65, "price": 2.0, "tax": 0}, {"code": "", "name": "وجبه سماش", "cat": "", "cost": 12.695033656860058, "price": 39.0, "tax": 0}, {"code": "", "name": "وجبه ميبل", "cat": "", "cost": 8.993948627105334, "price": 38.0, "tax": 0}, {"code": "", "name": "وجبه كلاسيك", "cat": "", "cost": 11.133203407895376, "price": 38.0, "tax": 0}, {"code": "", "name": "وجبه كرانشي", "cat": "", "cost": 8.514916121919367, "price": 37.0, "tax": 0}], "sales": [{"date": "01/01/2025", "inv": "INV-001", "note": "", "product": "", "qty": 15.0}, {"date": "01/01/2025", "inv": "INV-001", "note": "", "product": "", "qty": 0}, {"date": "01/01/2025", "inv": "INV-001", "note": "", "product": "", "qty": 0}, {"date": "01/01/2025", "inv": "INV-002", "note": "", "product": "", "qty": 0}, {"date": "02/01/2025", "inv": "INV-003", "note": "", "product": "", "qty": 0}, {"date": "02/01/2025", "inv": "INV-003", "note": "", "product": "", "qty": 0}, {"date": "02/01/2025", "inv": "INV-004", "note": "", "product": "", "qty": 0}], "purchases": []};
+const KEY='cost_system_v1';
+const SUPA_URL='https://fhhcarbxrdwoyakruocf.supabase.co', SUPA_KEY='sb_publishable_FZOUhrILsVoxKgFbh2YsPA_Up8RsULG';
+let sb=supabase.createClient(SUPA_URL,SUPA_KEY);
+let user=null, saveTimer=null;
+let S=loadLocal();let tab='dash';let q='';
+function loadLocal(){try{const x=JSON.parse(localStorage.getItem(KEY));if(x&&x.inventory)return x;}catch(e){}return JSON.parse(JSON.stringify(SEED));}
+function save(){localStorage.setItem(KEY,JSON.stringify(S));syncCloud();}
+function setSync(t){const e=document.getElementById('syncst');if(e)e.textContent=t;}
+function syncCloud(){
+  if(!user)return;
+  setSync('⏳ جاري الحفظ...');
+  clearTimeout(saveTimer);
+  saveTimer=setTimeout(async()=>{
+    try{
+      const {error}=await sb.from('kv').upsert({user_id:user.id,key:KEY,value:S,updated_at:new Date().toISOString()});
+      setSync(error?'⚠ مشكلة في الحفظ الأونلاين':'✓ محفوظ أونلاين');
+    }catch(e){setSync('⚠ مشكلة في الاتصال');}
+  },800);
+}
+async function loadCloud(){
+  try{
+    const {data,error}=await sb.from('kv').select('value').eq('key',KEY).maybeSingle();
+    if(!error&&data&&data.value&&data.value.inventory){S=data.value;localStorage.setItem(KEY,JSON.stringify(S));}
+    else{S=loadLocal();syncCloud();} // first login: import this device's data (or seed) to the cloud
+  }catch(e){S=loadLocal();}
+}
+async function signIn(){
+  const em=document.getElementById('lemail').value.trim(), pw=document.getElementById('lpass').value;
+  const err=document.getElementById('lerr');err.textContent='';
+  if(!em||!pw){err.textContent='اكتب اسم المستخدم وكلمة السر';return;}
+  const {data,error}=await sb.auth.signInWithPassword({email:em,password:pw});
+  if(error){err.textContent='بيانات الدخول غلط أو في مشكلة اتصال';return;}
+  user=data.user;await enterApp();
+}
+async function signOut(){await sb.auth.signOut();user=null;location.reload();}
+async function enterApp(){
+  document.getElementById('loginOv').style.display='none';
+  setSync('⏳ بيتم تحميل بياناتك...');
+  await loadCloud();
+  setSync('✓ محفوظ أونلاين');
+  render();
+}
+async function boot(){
+  const {data}=await sb.auth.getSession();
+  if(data&&data.session){user=data.session.user;await enterApp();}
+  else{document.getElementById('loginOv').style.display='flex';}
+}
+const TABS=[['dash','📊 الملخص'],['sales','🧾 المبيعات'],['purch','🛒 المشتريات'],['inv','🏪 المخزون'],['recipe','📖 الريسيبي'],['menu','🍽️ المنيو']];
+const nf=(x,d=2)=>x==null||x===''?'':Number(x).toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+const cls=x=>x<0?'neg':'';
+function opts(list,sel){return '<option value=""></option>'+list.map(v=>`<option${v===sel?' selected':''} value="${esc(v)}">${esc(v)}</option>`).join('');}
+function inp(tbl,i,f,v,type){if(type==='n'&&v!==''&&v!=null)v=Math.round(v*1e6)/1e6;return `<td><input ${type==='n'?'type="number" step="any"':''} value="${esc(v)}" onchange="setF('${tbl}',${i},'${f}',this.value,'${type||''}')"></td>`;}
+function sel(tbl,i,f,v,list){return `<td><select onchange="setF('${tbl}',${i},'${f}',this.value,'')">${opts(list,v)}</select></td>`;}
+function setF(t,i,f,v,type){S[t][i][f]=(type==='n'?(v===''?'':parseFloat(v)):v);save();render(true);}
+function addRow(t,row){S[t].push(row);save();render();setTimeout(()=>{const w=document.querySelector('.wrap');if(w)w.scrollTop=w.scrollHeight},30);}
+function delRow(t,i){if(confirm('حذف الصف؟')){S[t].splice(i,1);save();render();}}
+function xbtn(t,i){return `<td class="x"><button class="btn red" style="padding:2px 8px" onclick="delRow('${t}',${i})">✕</button></td>`;}
+function match(...a){return !q||a.join(' ').toLowerCase().includes(q.toLowerCase());}
+function search(){return `<div class="tools"><input type="search" placeholder="🔍 بحث" value="${esc(q)}" oninput="q=this.value;render(true,true)"></div>`;}
+let focusKeep=null;
+function render(keep,isSearch){
+  const R=calc(S);
+  const y=document.querySelector('.wrap')?document.querySelector('.wrap').scrollTop:0;
+  const ae=document.activeElement;const aeInfo=isSearch&&ae&&ae.type==='search'?ae.selectionStart:null;
+  document.getElementById('nav').innerHTML=TABS.map(([k,l])=>`<button class="${k===tab?'on':''}" onclick="tab='${k}';q='';render()">${l}</button>`).join('');
+  const V={dash,sales,purch,inv,recipe,menu}[tab];
+  document.getElementById('main').innerHTML=V(R);
+  if(keep){const w=document.querySelector('.wrap');if(w)w.scrollTop=y;}
+  if(aeInfo!=null){const s=document.querySelector('input[type=search]');s.focus();s.setSelectionRange(aeInfo,aeInfo);}
+}
+const invNames=()=>S.inventory.map(i=>i.name), menuNames=()=>S.menu.map(m=>m.name);
+function dash(R){
+  const T=R.tot;
+  const low=S.inventory.map((i,k)=>[i,R.inventory[k]]).filter(([i,r])=>r.balance<0);
+  const miss=[...new Set(S.recipe.filter((r,k)=>!R.recipe[k].ok).map(r=>r.material))];
+  const mismatch=S.menu.map((m,k)=>[m,R.menu[k]]).filter(([m,r])=>r.recipeCost!=null&&Math.abs(r.recipeCost-m.cost)>0.005);
+  return `<div class="cards">
+  <div class="card">إجمالي المبيعات (SAR)<b>${nf(T.sales)}</b></div>
+  <div class="card">تكلفة المبيعات<b>${nf(T.cost)}</b></div>
+  <div class="card">إجمالي الربح<b class="${cls(T.profit)}">${nf(T.profit)}</b></div>
+  <div class="card">هامش الربح %<b>${T.sales?nf(T.profit/T.sales*100,1)+'%':'-'}</b></div>
+  <div class="card">إجمالي المشتريات<b>${nf(T.purchases)}</b></div>
+  <div class="card">قيمة المخزون الحالي<b>${nf(T.invValue)}</b></div>
+  <div class="card">متوسط هامش الربح للمنيو<b>${nf(R.avgMargin)}</b></div></div>
+  ${low.length?`<div class="note">⚠ أصناف رصيدها بالسالب: ${low.map(([i])=>esc(i.name)).join('، ')}</div>`:''}
+  ${miss.length?`<div class="note">⚠ مواد في الريسيبي مش موجودة في المخزون (تكلفتها 0 زي الإكسل): ${miss.map(esc).join('، ')}</div>`:''}
+  ${mismatch.length?`<div class="note">ℹ تكلفة المنيو (مكتوبة يدوي زي الشيت) مختلفة عن تكلفة الريسيبي لـ ${mismatch.length} صنف. شوف تبويب المنيو، وزر "تحديث التكلفة من الريسيبي".</div>`:''}
+  <h3>ربحية الأصناف حسب الريسيبي</h3>
+  <div class="wrap"><table><thead><tr><th>الصنف</th><th>التكلفة</th><th>سعر البيع</th><th>الربح</th></tr></thead><tbody>
+  ${R.products.map(p=>`<tr><td class="c" style="text-align:right">${esc(p.product)}${p.inMenu?'':' <span class="sub">(مش في المنيو)</span>'}</td><td class="c">${nf(p.cost)}</td><td class="c">${nf(p.price)}</td><td class="c ${cls(p.profit)}">${nf(p.profit)}</td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function sales(R){
+  const rows=S.sales.map((r,i)=>match(r.date,r.inv,r.note,r.product)?`<tr class="${r.product&&!R.sales[i].ok?'warn':''}">
+   <td class="c">${i+1}</td>${inp('sales',i,'date',r.date)}${inp('sales',i,'inv',r.inv)}${inp('sales',i,'note',r.note)}${sel('sales',i,'product',r.product,menuNames())}
+   <td class="c">${r.product?esc(R.sales[i].ok?r.product:'❌ غير موجود'):''}</td>${inp('sales',i,'qty',r.qty,'n')}
+   <td class="c">${nf(R.sales[i].price)}</td><td class="c">${nf(R.sales[i].cost)}</td><td class="c ${cls(R.sales[i].profit)}">${nf(R.sales[i].profit)}</td>${xbtn('sales',i)}</tr>`:'').join('');
+  return `<p class="sub">أدخل كل عملية بيع. المكونات بتتخصم من المخزون تلقائياً عبر الريسيبي.</p>${search()}
+  <div class="tools"><button class="btn" onclick="addRow('sales',{date:today(),inv:nextInv(),note:'',product:'',qty:''})">➕ إضافة بيع</button></div>
+  <div class="wrap"><table><thead><tr><th>#</th><th>التاريخ</th><th>رقم الفاتورة</th><th>ملاحظة/العميل</th><th>اسم المنتج</th><th>تأكيد (تلقائي)</th><th>الكمية</th><th>سعر البيع</th><th>تكلفة المنتج</th><th>الربح</th><th></th></tr></thead><tbody>${rows}</tbody>
+  <tfoot><tr><td colspan="6">الإجمالي</td><td class="">${nf(R.tot.qty,0)}</td><td>${nf(R.tot.sales)}</td><td>${nf(R.tot.cost)}</td><td>${nf(R.tot.profit)}</td><td></td></tr></tfoot></table></div>`;
+}
+function today(){const d=new Date();return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();}
+function nextInv(){const l=S.sales.length?S.sales[S.sales.length-1].inv:'';return l||'INV-001';}
+function purch(R){
+  const rows=S.purchases.map((r,i)=>match(r.date,r.item,r.supplier,r.notes)?`<tr class="${r.item&&!R.purchases[i].ok?'warn':''}">
+   <td class="c">${i+1}</td>${inp('purchases',i,'date',r.date)}${sel('purchases',i,'item',r.item,invNames())}
+   <td class="c">${r.item?(R.purchases[i].ok?'✔':'❌ غير موجود'):''}</td>${inp('purchases',i,'qty',r.qty,'n')}
+   <td><input type="number" step="any" value="${r.price===''||r.price==null?'':r.price}" placeholder="${r.item?nf(R.purchases[i].price):''}" onchange="setF('purchases',${i},'price',this.value,'n')"></td>
+   <td class="c">${nf(R.purchases[i].total)}</td>${inp('purchases',i,'supplier',r.supplier)}${inp('purchases',i,'notes',r.notes)}${xbtn('purchases',i)}</tr>`:'').join('');
+  return `<p class="sub">أدخل كل عملية شراء، والمخزون بيتحدث لوحده. لو سبت سعر الوحدة فاضي بياخد متوسط سعر الشراء من المخزون (زي الشيت).</p>${search()}
+  <div class="tools"><button class="btn" onclick="addRow('purchases',{date:today(),item:'',qty:'',price:'',supplier:'',notes:''})">➕ إضافة شراء</button></div>
+  <div class="wrap"><table><thead><tr><th>#</th><th>التاريخ</th><th>اسم المادة</th><th>تأكيد</th><th>الكمية</th><th>سعر الوحدة</th><th>إجمالي التكلفة</th><th>المورد</th><th>ملاحظات</th><th></th></tr></thead><tbody>${rows}</tbody>
+  <tfoot><tr><td colspan="6">إجمالي المشتريات</td><td>${nf(R.tot.purchases)}</td><td colspan="3"></td></tr></tfoot></table></div>`;
+}
+function inv(R){
+  const rows=S.inventory.map((r,i)=>match(r.name,r.cat,r.code)?`<tr>
+   ${inp('inventory',i,'code',r.code)}${inp('inventory',i,'name',r.name)}${inp('inventory',i,'cat',r.cat)}${inp('inventory',i,'unit',r.unit)}${inp('inventory',i,'open',r.open,'n')}
+   <td class="c">${nf(R.inventory[i].purchased,3)}</td><td class="c">${nf(R.inventory[i].consumed,3)}</td><td class="c ${cls(R.inventory[i].balance)}">${nf(R.inventory[i].balance,3)}</td>
+   ${inp('inventory',i,'avg',r.avg,'n')}<td class="c">${nf(R.inventory[i].value)}</td>${xbtn('inventory',i)}</tr>`:'').join('');
+  return `<p class="sub">الرصيد الحالي = أول المدة + المشتريات − المستهلك (من المبيعات عبر الريسيبي). قيمة المخزون = الرصيد × متوسط سعر الشراء.</p>${search()}
+  <div class="tools"><button class="btn" onclick="addRow('inventory',{code:'',name:'مادة جديدة',cat:'',unit:'كيلو',open:0,avg:0})">➕ إضافة مادة</button></div>
+  <div class="wrap"><table><thead><tr><th>الكود</th><th>اسم المادة</th><th>الفئة</th><th>الوحدة</th><th>كمية أول المدة</th><th>إجمالي المشتريات</th><th>إجمالي المستهلك</th><th>الرصيد الحالي</th><th>متوسط سعر الشراء</th><th>قيمة المخزون</th><th></th></tr></thead><tbody>${rows}</tbody>
+  <tfoot><tr><td colspan="9">إجمالي قيمة المخزون</td><td>${nf(R.tot.invValue)}</td><td></td></tr></tfoot></table></div>`;
+}
+function recipe(R){
+  const prods=[...new Set(S.recipe.map(r=>r.product))];
+  const rows=S.recipe.map((r,i)=>match(r.product,r.material)?`<tr class="${R.recipe[i].ok?'':'warn'}">
+   ${sel('recipe',i,'product',r.product,[...new Set([...menuNames(),...prods])])}${sel('recipe',i,'material',r.material,invNames())}
+   ${inp('recipe',i,'qty',r.qty,'n')}<td class="c">${esc(R.recipe[i].unit)}</td><td class="c w">${R.recipe[i].ok?nf(R.recipe[i].cost,4):'❌ مش في المخزون'}</td>${xbtn('recipe',i)}</tr>`:'').join('');
+  return `<p class="sub">مكونات كل صنف. التكلفة = متوسط سعر المادة من المخزون × الكمية. تكلفة الصنف = مجموع تكلفة مكوناته.</p>
+  <div class="wrap" style="max-height:30vh"><table style="min-width:400px"><thead><tr><th>الصنف</th><th>التكلفة</th><th>سعر البيع</th><th>الربح</th></tr></thead><tbody>
+  ${R.products.map(p=>`<tr><td class="c" style="text-align:right">${esc(p.product)}</td><td class="c">${nf(p.cost)}</td><td class="c">${nf(p.price)}</td><td class="c ${cls(p.profit)}">${nf(p.profit)}</td></tr>`).join('')}</tbody></table></div>
+  <h3>تفاصيل الريسيبي</h3>${search()}
+  <div class="tools"><button class="btn" onclick="addRow('recipe',{product:'${tab==='recipe'&&q?'':''}',material:'',qty:''})">➕ إضافة مكوّن</button></div>
+  <div class="wrap"><table><thead><tr><th>اسم المنتج</th><th>اسم المادة</th><th>الكمية المستخدمة</th><th>الوحدة</th><th>التكلفة التقديرية</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function menu(R){
+  const rows=S.menu.map((r,i)=>match(r.name,r.cat)?`<tr>
+   ${inp('menu',i,'code',r.code)}${inp('menu',i,'name',r.name)}${inp('menu',i,'cat',r.cat)}${inp('menu',i,'cost',r.cost,'n')}${inp('menu',i,'price',r.price,'n')}${inp('menu',i,'tax',r.tax,'n')}
+   <td class="c ${cls(R.menu[i].margin)}">${nf(R.menu[i].margin)}</td><td class="c">${R.menu[i].pct==null?'':nf(R.menu[i].pct*100,1)+'%'}</td>
+   <td class="c">${R.menu[i].recipeCost==null?'-':nf(R.menu[i].recipeCost)}</td>${xbtn('menu',i)}</tr>`:'').join('');
+  return `<p class="sub">هامش الربح = سعر البيع − التكلفة − الضريبة/الخدمة. نسبة الربح = الهامش ÷ التكلفة. "تكلفة المكونات" مكتوبة يدوي زي الشيت، وعمود "تكلفة الريسيبي" بيوريك التكلفة المحسوبة حالياً.</p>${search()}
+  <div class="tools"><button class="btn" onclick="addRow('menu',{code:'',name:'صنف جديد',cat:'',cost:0,price:0,tax:0})">➕ إضافة صنف</button>
+  <button class="btn sec" onclick="syncCost()">🔄 تحديث التكلفة من الريسيبي</button></div>
+  <div class="wrap"><table><thead><tr><th>الكود</th><th>اسم المنتج</th><th>الفئة</th><th>تكلفة المكونات</th><th>سعر البيع</th><th>ضريبة/خدمة</th><th>هامش الربح</th><th>نسبة الربح</th><th>تكلفة الريسيبي</th><th></th></tr></thead><tbody>${rows}</tbody>
+  <tfoot><tr><td colspan="6">متوسط هامش الربح</td><td>${nf(R.avgMargin)}</td><td colspan="3"></td></tr></tfoot></table></div>`;
+}
+function syncCost(){if(!confirm('تحديث تكلفة المنيو من الريسيبي لكل الأصناف؟'))return;const R=calc(S);S.menu.forEach((m,i)=>{if(R.menu[i].recipeCost!=null)m.cost=R.menu[i].recipeCost;});save();render();}
+function exportJSON(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'}));a.download='backup-'+new Date().toISOString().slice(0,10)+'.json';a.click();}
+function importJSON(el){const f=el.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const x=JSON.parse(r.result);if(!x.inventory)throw 0;S=x;save();render();alert('تم الاسترجاع');}catch(e){alert('ملف غير صالح');}};r.readAsText(f);}
+function resetAll(){if(confirm('هترجع كل البيانات لبيانات الشيت الأصلية وتمسح اللي دخلته. متأكد؟')){S=JSON.parse(JSON.stringify(SEED));save();render();}}
+function printTab(){
+  const names={dash:'الملخص',sales:'المبيعات',purch:'المشتريات',inv:'المخزون',recipe:'الريسيبي',menu:'المنيو'};
+  document.getElementById('ptitle').textContent='نظام التكاليف والمخزون — '+(names[tab]||'');
+  document.getElementById('pdate').textContent='تاريخ التصدير: '+today();
+  window.print();
+}
+boot();
+</script></body></html>
