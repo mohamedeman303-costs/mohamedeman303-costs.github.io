@@ -54,6 +54,15 @@ tfoot td{background:#e8f0fa;font-weight:700;padding:6px 8px;position:sticky;bott
 #loginOv h2{margin:0 0 4px;color:var(--pri);font-size:18px}
 #loginOv input{width:100%;padding:9px;margin:6px 0;border:1px solid var(--line);border-radius:6px;font:inherit}
 #loginOv .err{color:var(--bad);font-size:13px;min-height:18px}
+#passwordDialog{border:1px solid var(--line);border-radius:12px;padding:24px;width:380px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);overflow:auto;color:var(--txt);background:#fff}
+#passwordDialog::backdrop{background:rgba(15,23,42,.55)}
+#passwordDialog h2{margin:0 0 8px;color:var(--pri);font-size:20px}
+#passwordDialog label{display:block;font-size:14px;margin-top:12px}
+#passwordDialog input{box-sizing:border-box;width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;font:inherit;margin-top:5px}
+#passwordDialog .pw-actions{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+#passwordMessage{min-height:20px;font-size:14px;margin:12px 0 0}
+#passwordDialog button:disabled{opacity:.6;cursor:wait}
+@media print{#passwordDialog{display:none!important}}
 #syncst{font-size:12px;color:#cfe3f5}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script></head><body>
@@ -63,6 +72,7 @@ tfoot td{background:#e8f0fa;font-weight:700;padding:6px 8px;position:sticky;bott
 <button class="btn sec" onclick="exportJSON()">⬇ نسخة احتياطية</button>
 <button class="btn sec" onclick="document.getElementById('imp').click()">⬆ استرجاع نسخة</button>
 <button class="btn red" onclick="resetAll()">إعادة ضبط</button>
+<button id="changePasswordBtn" class="btn sec" onclick="openPasswordDialog()" hidden>🔒 تغيير الباسورد</button>
 <button class="btn sec" onclick="signOut()">🚪 خروج</button>
 <input type="file" id="imp" accept=".json" hidden onchange="importJSON(this)"></div></header>
 <div id="phead" style="display:none"><h2 id="ptitle"></h2><p id="pdate" class="sub"></p></div>
@@ -74,6 +84,20 @@ tfoot td{background:#e8f0fa;font-weight:700;padding:6px 8px;position:sticky;bott
 <div class="err" id="lerr"></div>
 <button class="btn" style="width:100%" onclick="signIn()">دخول</button>
 </div></div>
+<dialog id="passwordDialog" aria-labelledby="passwordTitle" dir="rtl">
+<form id="passwordForm" onsubmit="changePassword(event)">
+<h2 id="passwordTitle">تغيير الباسورد</h2>
+<p class="sub">اختار باسورد جديد مختلف عن الحالي. بيانات شغلك هتفضل زي ما هي.</p>
+<label for="currentPassword">الباسورد الحالي</label>
+<input id="currentPassword" type="password" autocomplete="current-password" dir="ltr" required>
+<label for="newPassword">الباسورد الجديد</label>
+<input id="newPassword" type="password" autocomplete="new-password" dir="ltr" minlength="8" required aria-describedby="passwordHint">
+<p id="passwordHint" class="sub">8 حروف أو أرقام على الأقل. الأفضل تستخدم باسورد طويل ومميز.</p>
+<label for="confirmPassword">تأكيد الباسورد الجديد</label>
+<input id="confirmPassword" type="password" autocomplete="new-password" dir="ltr" minlength="8" required>
+<p id="passwordMessage" role="status" aria-live="polite"></p>
+<div class="pw-actions"><button id="passwordSubmit" type="submit" class="btn">حفظ الباسورد</button><button id="passwordCancel" type="button" class="btn sec" onclick="closePasswordDialog()">إلغاء</button></div>
+</form></dialog>
 <nav id="nav"></nav><main id="main"></main>
 <script>
 // Calculation engine: mirrors the Excel formulas exactly.
@@ -163,9 +187,53 @@ async function signIn(){
   if(error){err.textContent='بيانات الدخول غلط أو في مشكلة اتصال';return;}
   user=data.user;await enterApp();
 }
+let passwordBusy=false;
+function passwordMessage(text,ok=false){const el=document.getElementById('passwordMessage');el.textContent=text;el.style.color=ok?'var(--ok)':'var(--bad)';}
+function openPasswordDialog(){
+  if(!user)return;
+  document.getElementById('passwordForm').reset();passwordMessage('');
+  document.getElementById('passwordDialog').showModal();
+  document.getElementById('currentPassword').focus();
+}
+function closePasswordDialog(){
+  if(passwordBusy)return;
+  document.getElementById('passwordForm').reset();passwordMessage('');
+  document.getElementById('passwordDialog').close();
+}
+document.getElementById('passwordDialog').addEventListener('cancel',e=>{e.preventDefault();closePasswordDialog();});
+async function changePassword(event){
+  event.preventDefault();if(passwordBusy||!user)return;
+  const current=document.getElementById('currentPassword').value;
+  const next=document.getElementById('newPassword').value;
+  const confirmation=document.getElementById('confirmPassword').value;
+  passwordMessage('');
+  if(!current||!next||!confirmation){passwordMessage('اكتب الباسورد الحالي والجديد والتأكيد');return;}
+  if(next.length<8){passwordMessage('الباسورد الجديد لازم يكون 8 حروف أو أرقام على الأقل');return;}
+  if(next!==confirmation){passwordMessage('الباسورد الجديد والتأكيد مش متطابقين');return;}
+  if(next===current){passwordMessage('اختار باسورد جديد مختلف عن الحالي');return;}
+  passwordBusy=true;
+  const submit=document.getElementById('passwordSubmit'),cancel=document.getElementById('passwordCancel');
+  submit.disabled=true;cancel.disabled=true;passwordMessage('جاري التحقق والحفظ...');
+  try{
+    // A separate, memory-only client checks the current password without replacing the app session.
+    const verifier=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:'cost-password-check'}});
+    const check=await verifier.auth.signInWithPassword({email:user.email,password:current});
+    if(check.error){passwordMessage(check.error.code==='invalid_credentials'?'الباسورد الحالي مش صحيح':'تعذر التحقق. راجع الاتصال وحاول تاني');return;}
+    if(!check.data.user||check.data.user.id!==user.id){passwordMessage('تعذر التحقق من الحساب. سجّل دخولك تاني');return;}
+    const {error}=await sb.auth.updateUser({password:next});
+    if(error){
+      const messages={weak_password:'الباسورد ضعيف. اختار باسورد أطول وأقوى',same_password:'اختار باسورد مختلف عن الحالي',reauthentication_needed:'محتاج تسجّل خروج وتدخل تاني قبل تغيير الباسورد',session_not_found:'الجلسة انتهت. سجّل دخولك تاني',over_request_rate_limit:'محاولات كتير. استنى شوية وحاول تاني'};
+      passwordMessage(messages[error.code]||'الباسورد ما اتغيرش. راجع الاتصال وحاول تاني');return;
+    }
+    document.getElementById('passwordForm').reset();
+    passwordMessage('تم تغيير الباسورد بنجاح ✓ استخدم الجديد في تسجيل الدخول بعد كده',true);
+  }catch(e){passwordMessage('تعذر الاتصال. راجع الإنترنت وحاول تاني');}
+  finally{passwordBusy=false;submit.disabled=false;cancel.disabled=false;}
+}
 async function signOut(){await sb.auth.signOut();user=null;location.reload();}
 async function enterApp(){
   document.getElementById('loginOv').style.display='none';
+  document.getElementById('changePasswordBtn').hidden=false;
   setSync('⏳ بيتم تحميل بياناتك...');
   await loadCloud();
   setSync('✓ محفوظ أونلاين');
